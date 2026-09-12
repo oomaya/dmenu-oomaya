@@ -11,18 +11,21 @@ TERMINAL=${TERMINAL:-kitty}
 [ -x "$(command -v "$TERMINAL" 2>/dev/null)" ] || TERMINAL=xterm
 
 # Parse XDG desktop files with sub-millisecond awk
-selected=$(awk -F= '
-BEGIN { name=""; exec=""; nodisplay=0; term=0; icon="" }
-/^\[Desktop Entry\]/ { in_entry=1; next }
-/^\[/ { in_entry=0 }
-in_entry && /^Name=/ && !name { name=substr($0, 6) }
-in_entry && /^Exec=/ && !exec { exec=substr($0, 6) }
-in_entry && /^NoDisplay=true/ { nodisplay=1 }
-in_entry && /^Terminal=true/ { term=1 }
+selected=$(awk -v term_bin="$TERMINAL" -F= '
+BEGIN { name=""; exec=""; nodisplay=0; term=0; in_entry=0; in_action=0 }
+/^\[Desktop Entry\]/ { in_entry=1; in_action=0; next }
+/^\[Desktop Action/ { in_action=1 }
+/^\[/ { if (!/^\[Desktop Action/) { in_entry=0; in_action=0 } }
+in_entry && !in_action && /^Name=/ && !name { name=substr($0, 6) }
+in_entry && !in_action && /^Exec=/ && !exec { exec=substr($0, 6) }
+in_entry && !in_action && /^NoDisplay=true/ { nodisplay=1 }
+in_entry && !in_action && /^Terminal=true/ { term=1 }
 ENDFILE {
-    if (in_entry && name != "" && exec != "" && !nodisplay) {
+    if (name != "" && exec != "" && !nodisplay) {
         gsub(/%[a-zA-Z]/, "", exec)
         sub(/^[ \t]+|[ \t]+$/, "", exec)
+        if (term)
+            exec = term_bin " -e " exec
         
         # Categorize glyph
         lname = tolower(name " " exec)
@@ -44,18 +47,14 @@ ENDFILE {
         else if (lname ~ /(image|photo|gimp|inkscape|view)/)
             glyph = " "
 
-        printf "%s %-32s \t%s\t%s\n", glyph, name, exec, (term ? "term" : "gui")
+        printf "%s  %-32s  │  %s\n", glyph, name, exec
     }
-    name=""; exec=""; nodisplay=0; term=0; in_entry=0
-}' /usr/share/applications/*.desktop /usr/local/share/applications/*.desktop "${XDG_DATA_HOME:-$HOME/.local/share}/applications/"*.desktop 2>/dev/null | sort -u -k1,1 | dmenu -p "$PROMPT" -l 10)
+    name=""; exec=""; nodisplay=0; term=0; in_entry=0; in_action=0
+}' /usr/share/applications/*.desktop /usr/local/share/applications/*.desktop "${XDG_DATA_HOME:-$HOME/.local/share}/applications/"*.desktop 2>/dev/null | sort -u | dmenu -p "$PROMPT" -l 10)
 
 [ -n "$selected" ] || exit 0
 
-cmd=$(printf '%s\n' "$selected" | cut -f2)
-is_term=$(printf '%s\n' "$selected" | cut -f3)
+cmd=$(printf '%s\n' "$selected" | sed 's/.*│[ ]*//')
+[ -n "$cmd" ] || exit 0
 
-if [ "$is_term" = "term" ]; then
-    nohup "$TERMINAL" -e $cmd >/dev/null 2>&1 &
-else
-    nohup /bin/sh -c "$cmd" >/dev/null 2>&1 &
-fi
+nohup /bin/sh -c "$cmd" >/dev/null 2>&1 &

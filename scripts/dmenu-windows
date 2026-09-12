@@ -27,12 +27,12 @@ selected=$(wmctrl -l | awk '$2 != -1 {
 	else if (ltitle ~ /(thunar|file)/)
 		icon = " "
 		
-	printf "%s [Tag %s]  %s\t%s\n", icon, ws, title, id
+	printf "%s [Tag %s] %-55s  [%s]\n", icon, ws, title, id
 }' | dmenu -p "$PROMPT" -l 10)
 
 [ -n "$selected" ] || exit 0
 
-win_id=$(printf '%s\n' "$selected" | cut -f2)
+win_id=$(printf '%s\n' "$selected" | sed -n 's/.*\[\(0x[0-9a-fA-F]*\)\]$/\1/p')
 [ -n "$win_id" ] || exit 0
 
 wmctrl -ia "$win_id"
