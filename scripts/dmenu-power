@@ -1,0 +1,47 @@
+#!/bin/sh
+# dmenu-power — Centered Tokyo Night Session & Power Menu
+set -eu
+
+PROMPT="  Power >"
+
+choice=$(printf "%s\n" \
+	"󰌾  Lock Screen" \
+	"󰍃  Log Out" \
+	"󰒲  Suspend" \
+	"󰑓  Reboot" \
+	"󰐥  Power Off" | dmenu -p "$PROMPT" -l 5)
+
+[ -n "$choice" ] || exit 0
+
+case "$choice" in
+	*"Lock Screen"*)
+		if command -v dwm-lock >/dev/null 2>&1; then
+			dwm-lock
+		elif command -v slock >/dev/null 2>&1; then
+			slock
+		else
+			loginctl lock-session
+		fi
+		;;
+	*"Log Out"*)
+		confirm=$(printf "%s\n" "󰜺  Cancel" "󰍃  Confirm Log Out" | dmenu -p "Log out of session? >" -l 2)
+		if [ "$confirm" = "󰍃  Confirm Log Out" ]; then
+			pkill -TERM -u "$(id -u)" -x dwm || loginctl terminate-session self
+		fi
+		;;
+	*"Suspend"*)
+		systemctl suspend
+		;;
+	*"Reboot"*)
+		confirm=$(printf "%s\n" "󰜺  Cancel" "󰑓  Confirm Reboot" | dmenu -p "Reboot system? >" -l 2)
+		if [ "$confirm" = "󰑓  Confirm Reboot" ]; then
+			systemctl reboot
+		fi
+		;;
+	*"Power Off"*)
+		confirm=$(printf "%s\n" "󰜺  Cancel" "󰐥  Confirm Power Off" | dmenu -p "Shut down computer? >" -l 2)
+		if [ "$confirm" = "󰐥  Confirm Power Off" ]; then
+			systemctl poweroff
+		fi
+		;;
+esac

@@ -1,0 +1,46 @@
+#!/bin/sh
+# dmenu-clip — Centered Tokyo Night Clipboard History
+set -eu
+
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/dmenu-clip"
+HISTORY_FILE="$CACHE_DIR/history.txt"
+MAX_ITEMS=50
+
+mkdir -p "$CACHE_DIR"
+touch "$HISTORY_FILE"
+
+# If called to add an item
+if [ "${1:-}" = "add" ]; then
+    current=$(xclip -selection clipboard -o 2>/dev/null || true)
+    [ -n "$current" ] || exit 0
+    # Clean single line representation for comparison
+    flat=$(printf '%s' "$current" | tr '\n' ' ' | head -c 200)
+    # Don't add duplicate if same as top
+    if [ -s "$HISTORY_FILE" ]; then
+        top=$(head -n 1 "$HISTORY_FILE")
+        [ "$flat" != "$top" ] || exit 0
+    fi
+    # Prepend and limit size
+    tmp=$(mktemp)
+    printf '%s\n' "$flat" > "$tmp"
+    cat "$HISTORY_FILE" >> "$tmp"
+    head -n "$MAX_ITEMS" "$tmp" > "$HISTORY_FILE"
+    rm -f "$tmp"
+    exit 0
+fi
+
+# Show menu
+if [ ! -s "$HISTORY_FILE" ]; then
+    # Populate with current clipboard if empty
+    current=$(xclip -selection clipboard -o 2>/dev/null || true)
+    if [ -n "$current" ]; then
+        printf '%s\n' "$current" | tr '\n' ' ' | head -c 200 > "$HISTORY_FILE"
+        printf '\n' >> "$HISTORY_FILE"
+    fi
+fi
+
+choice=$(cat "$HISTORY_FILE" | dmenu -p "󱉥  Clipboard >" -l 10)
+[ -n "$choice" ] || exit 0
+
+printf '%s' "$choice" | xclip -selection clipboard
+printf '%s' "$choice" | xclip -selection primary

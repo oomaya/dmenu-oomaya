@@ -1,0 +1,8 @@
+#!/bin/sh
+# dmenu-run — Centered Tokyo Night PATH Command Runner
+set -eu
+
+PROMPT="  Run >"
+cmd=$(dmenu_path | dmenu -p "$PROMPT" -l 10 "$@")
+[ -n "$cmd" ] || exit 0
+nohup ${SHELL:-"/bin/sh"} -c "$cmd" >/dev/null 2>&1 &

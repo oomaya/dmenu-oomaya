@@ -1,0 +1,38 @@
+#!/bin/sh
+# dmenu-windows — Centered Tokyo Night Interactive Window Switcher
+set -eu
+
+command -v wmctrl >/dev/null 2>&1 || {
+	echo "wmctrl is required for dmenu-windows" >&2
+	exit 1
+}
+
+PROMPT="  Windows >"
+
+selected=$(wmctrl -l | awk '$2 != -1 {
+	id = $1
+	ws = $2 + 1
+	title = ""
+	for (i = 4; i <= NF; i++) title = title (i == 4 ? "" : " ") $i
+	
+	# Determine icon
+	ltitle = tolower(title)
+	icon = " "
+	if (ltitle ~ /(brave|firefox|chrome|chromium)/)
+		icon = " "
+	else if (ltitle ~ /(kitty|alacritty|ghostty|terminal|bash|zsh|agy)/)
+		icon = " "
+	else if (ltitle ~ /(nvim|vim|code|ide)/)
+		icon = " "
+	else if (ltitle ~ /(thunar|file)/)
+		icon = " "
+		
+	printf "%s [Tag %s]  %s\t%s\n", icon, ws, title, id
+}' | dmenu -p "$PROMPT" -l 10)
+
+[ -n "$selected" ] || exit 0
+
+win_id=$(printf '%s\n' "$selected" | cut -f2)
+[ -n "$win_id" ] || exit 0
+
+wmctrl -ia "$win_id"

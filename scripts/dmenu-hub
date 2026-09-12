@@ -1,0 +1,40 @@
+#!/bin/sh
+# dmenu-hub — Master Action & Script Hub for DWM
+set -eu
+
+PROMPT="⚡ Hub >"
+
+choice=$(printf "%s\n" \
+	"  Applications (dmenu-desktop)" \
+	"  Run Command (dmenu-run)" \
+	"  Window Switcher (dmenu-windows)" \
+	"󱉥  Clipboard History (dmenu-clip)" \
+	"  Keybindings Palette (dwm-keybinds)" \
+	"  Screenshot Tool (dmenu-scrot)" \
+	"  Power Menu (dmenu-power)" | dmenu -p "$PROMPT" -l 7)
+
+[ -n "$choice" ] || exit 0
+
+case "$choice" in
+	*"Applications"*)
+		dmenu-desktop
+		;;
+	*"Run Command"*)
+		dmenu-run
+		;;
+	*"Window Switcher"*)
+		dmenu-windows
+		;;
+	*"Clipboard"*)
+		dmenu-clip
+		;;
+	*"Keybindings"*)
+		dwm-keybinds
+		;;
+	*"Screenshot"*)
+		dmenu-scrot
+		;;
+	*"Power"*)
+		dmenu-power
+		;;
+esac
