@@ -1,0 +1,74 @@
+#!/bin/sh
+# dmenu-omacorn — Centered Tokyo Night Controller for Omacorn DPI Evasion Daemon
+set -eu
+
+command -v omacorn >/dev/null 2>&1 || {
+	notify-send "Omacorn Error" "omacorn binary not found in PATH"
+	exit 1
+}
+
+# Determine terminal emulator honoring user's preferences
+TERMINAL=${TERMINAL:-ghostty}
+[ -x "$(command -v "$TERMINAL" 2>/dev/null)" ] || TERMINAL=kitty
+[ -x "$(command -v "$TERMINAL" 2>/dev/null)" ] || TERMINAL=alacritty
+[ -x "$(command -v "$TERMINAL" 2>/dev/null)" ] || TERMINAL=xterm
+
+# Parse current status in sub-2ms awk
+STATE_STR=$(omacorn status --json 2>/dev/null | awk -F': ' '
+/SpoofActive/ { gsub(/[ ,"]/, "", $2); spoof=$2 }
+/GecitActive/ { gsub(/[ ,"]/, "", $2); gecit=$2 }
+/ProxyEnabled/ { gsub(/[ ,"]/, "", $2); proxy=$2 }
+END {
+    state="STANDBY"
+    if (spoof == "true") state="SPOOFDPI"
+    if (gecit == "true") state="GECIT"
+    pstate = (proxy == "true") ? "PROXY:ON" : "PROXY:OFF"
+    printf "[%s | %s]", state, pstate
+}')
+
+PROMPT="🦄 Omacorn ${STATE_STR:-[STANDBY]} >"
+
+choice=$(printf "%s\n" \
+	"🚀  Launch Cyberpunk Dashboard (TUI)" \
+	"⚡  Engage Pilot 1 (SpoofDPI User Daemon)" \
+	"🔥  Engage Pilot 2 (Gecit Kernel eBPF)" \
+	"🛑  Disengage All Engines (Standby)" \
+	"🌐  Toggle Desktop Proxy (~/.config/environment.d)" \
+	"📡  Run Live Latency & Handshake Probe" \
+	"📊  Inspect Status Board" \
+	"📜  Tail Live Engine Journal Logs" | dmenu -p "$PROMPT" -l 8)
+
+[ -n "$choice" ] || exit 0
+
+case "$choice" in
+	*"Launch Cyberpunk Dashboard"*)
+		nohup "$TERMINAL" -e omacorn >/dev/null 2>&1 &
+		;;
+	*"Engage Pilot 1"*)
+		out=$(omacorn start spoofdpi 2>&1)
+		notify-send -u normal "🦄 Omacorn Pilot 1" "${out:-SpoofDPI engaged on 127.0.0.1:8080}"
+		;;
+	*"Engage Pilot 2"*)
+		out=$(omacorn start gecit 2>&1)
+		notify-send -u normal "🦄 Omacorn Pilot 2" "${out:-Gecit eBPF engaged}"
+		;;
+	*"Disengage All Engines"*)
+		out=$(omacorn stop all 2>&1)
+		notify-send -u normal "🦄 Omacorn" "${out:-All bypass engines stopped (Standby)}"
+		;;
+	*"Toggle Desktop Proxy"*)
+		out=$(omacorn proxy toggle 2>&1)
+		notify-send -u normal "🦄 Omacorn Proxy" "${out:-Desktop proxy state toggled}"
+		;;
+	*"Run Live Latency"*)
+		out=$(omacorn test 2>&1)
+		notify-send -u normal "🦄 Omacorn Probe" "$out"
+		;;
+	*"Inspect Status Board"*)
+		out=$(omacorn status 2>&1)
+		notify-send -u normal "🦄 Omacorn Status" "$out"
+		;;
+	*"Tail Live Engine Journal Logs"*)
+		nohup "$TERMINAL" -e omacorn logs >/dev/null 2>&1 &
+		;;
+esac
