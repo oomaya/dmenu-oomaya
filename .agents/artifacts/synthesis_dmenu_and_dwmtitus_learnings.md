@@ -8,15 +8,17 @@
 
 ## 1. The Display Manager Path Gap (`/usr/local/bin` vs `~/.local/bin`)
 
-### The Phenomenon
-During initial testing or fresh VM spin-ups, user configurations in `~/.local/bin` worked when running inside an active shell or tmux session, but dropped into TTY or crashed on graphical login via display managers (SDDM, LightDM, GDM).
+### The Phenomenon (The SDDM Ejection Loop)
+During initial testing or fresh VM spin-ups, user configurations in `~/.local/bin` worked when running inside an existing shell or tmux session. However, on graphical login via SDDM, the session immediately kicked the user straight back out to the login screen. 
 
-### The Root Mechanism
+The only recovery vector was dropping to a virtual console (`Ctrl + Alt + F3`), authenticating in raw TTY, and manually executing `sudo make clean install` from the build repository to place binaries into system `$PATH`.
+
+### The Root Mechanism (Extremely Fragile Environment Boundary)
 Display managers initialize graphical Xsessions (`/usr/share/xsessions/dwm.desktop`) in a clean, non-interactive environment with a minimal system `$PATH`:
 ```text
 /usr/local/bin:/usr/bin:/bin
 ```
-User-level shell initializers (`~/.bashrc`, `~/.zshrc`, `~/.profile`) are **not yet sourced** when the display manager spawns the window manager binary or executes early session autostarts. If `dwm`, `dmenu`, or session helpers reside only in `~/.local/bin`, the display manager fails to spawn them.
+User-level shell initializers (`~/.bashrc`, `~/.zshrc`, `~/.profile`) are **not yet sourced** when the display manager spawns the window manager binary or executes early session autostarts. Relying on `~/.local/bin` for window manager startup is **extremely fragile**: if `dwm`, `dmenu`, or session helpers reside only in user space, the display manager fails to resolve them and aborts the graphical session instantly.
 
 ### The Architectural Standard
 1. **Global Canonical Location**: Core window manager binaries, runners, and display helpers must be installed to `/usr/local/bin` (`PREFIX=/usr/local`).
@@ -25,12 +27,12 @@ User-level shell initializers (`~/.bashrc`, `~/.zshrc`, `~/.profile`) are **not 
 
 ---
 
-## 2. The Upstream Suckless `dmenu_path` Cold-Start Bug
+## 2. The Upstream Suckless `dmenu_path` Cold-Start Bug (The Catch-22)
 
 ### The Phenomenon
 Pressing `Alt + P` (`dmenu-run`) on a fresh system, after cache cleanup, or during a cold start resulted in total silence—no menu appeared and no error was surfaced to the user.
 
-### The Root Mechanism
+### The Root Mechanism (The Catch-22)
 Upstream suckless `dmenu_path` contains the following logic:
 ```sh
 IFS=:
@@ -40,12 +42,13 @@ else
     cat "$cache"
 fi
 ```
-The `-n "$cache"` flag tests if any directory in `$PATH` is newer than `$cache`. On a cold start (when `~/.cache/dmenu_run` does not yet exist):
-1. `stest` calls `stat("$cache")`, which fails with `ENOENT`.
-2. `stest` prints `perror` ("No such file or directory") to `stderr` and exits with code 1.
-3. The `if` condition evaluates to false, jumping to `else: cat "$cache"`.
-4. `cat "$cache"` fails because the file does not exist, emitting an empty stdout stream.
-5. In parent scripts executing under `set -eu` (such as `dmenu-run`), the pipeline fails with a non-zero exit code, silently terminating the process before `dmenu` can map its X11 window.
+The script encounters a textbook **Catch-22**:
+- `stest -n "$cache"` will only generate the cache if directories in `$PATH` are newer than `$cache`.
+- But it cannot compare mtimes against `$cache` because the cache file does not exist yet.
+- Because `stat("$cache")` fails with `ENOENT`, `stest` prints `perror` ("No such file or directory") to `stderr` and exits with code 1.
+- The `if` condition evaluates to false, jumping to `else: cat "$cache"`.
+- `cat "$cache"` also fails because the file does not exist, emitting an empty stdout stream.
+- In parent scripts executing under `set -eu` (such as `dmenu-run`), the pipeline fails with a non-zero exit code, silently terminating the process before `dmenu` can map its X11 window.
 
 ### The Solution
 ```sh
