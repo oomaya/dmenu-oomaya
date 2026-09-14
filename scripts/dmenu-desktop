@@ -3,58 +3,164 @@
 set -eu
 
 PROMPT="  Apps >"
+DRY_RUN=0
+if [ "${1:-}" = "--dry-run" ]; then
+	DRY_RUN=1
+	shift
+fi
 
-# Determine terminal emulator honoring user's preferences
-TERMINAL=${TERMINAL:-kitty}
-[ -x "$(command -v "$TERMINAL" 2>/dev/null)" ] || TERMINAL=alacritty
-[ -x "$(command -v "$TERMINAL" 2>/dev/null)" ] || TERMINAL=ghostty
-[ -x "$(command -v "$TERMINAL" 2>/dev/null)" ] || TERMINAL=xterm
+# Determine terminal emulator honoring user's preferences & generic fallback
+resolve_terminal() {
+	if [ -n "${TERMINAL:-}" ] && command -v "$TERMINAL" >/dev/null 2>&1; then
+		printf '%s\n' "$TERMINAL"
+		return
+	fi
+	if candidate=$(dwm-terminal --print-command 2>/dev/null); then
+		if [ -n "$candidate" ] && command -v "$candidate" >/dev/null 2>&1; then
+			printf '%s\n' "$candidate"
+			return
+		fi
+	fi
+	for term in ghostty alacritty kitty xterm "${TERM:-xterm}"; do
+		if command -v "$term" >/dev/null 2>&1; then
+			printf '%s\n' "$term"
+			return
+		fi
+	done
+	printf '%s\n' "sh"
+}
 
-# Parse XDG desktop files with sub-millisecond awk
-selected=$(awk -v term_bin="$TERMINAL" -F= '
-BEGIN { name=""; exec=""; nodisplay=0; term=0; in_entry=0; in_action=0 }
-/^\[Desktop Entry\]/ { in_entry=1; in_action=0; next }
-/^\[Desktop Action/ { in_action=1 }
-/^\[/ { if (!/^\[Desktop Action/) { in_entry=0; in_action=0 } }
-in_entry && !in_action && /^Name=/ && !name { name=substr($0, 6) }
-in_entry && !in_action && /^Exec=/ && !exec { exec=substr($0, 6) }
-in_entry && !in_action && /^NoDisplay=true/ { nodisplay=1 }
-in_entry && !in_action && /^Terminal=true/ { term=1 }
-ENDFILE {
-    if (name != "" && exec != "" && !nodisplay) {
-        gsub(/%[a-zA-Z]/, "", exec)
-        sub(/^[ \t]+|[ \t]+$/, "", exec)
-        if (term)
-            exec = term_bin " -e " exec
-        
-        # Categorize glyph
-        lname = tolower(name " " exec)
-        glyph = " "
-        if (lname ~ /(firefox|brave|chrome|chromium|browser|surf|web)/)
-            glyph = " "
-        else if (lname ~ /(term|kitty|alacritty|ghostty|foot|console)/)
-            glyph = " "
-        else if (lname ~ /(editor|nvim|vim|code|ide|studio|text)/)
-            glyph = " "
-        else if (lname ~ /(file|thunar|nautilus|ranger|yazi|fm)/)
-            glyph = " "
-        else if (lname ~ /(music|audio|player|spotify|mpv|vlc|media)/)
-            glyph = " "
-        else if (lname ~ /(setting|config|control|display|network|bluetooth)/)
-            glyph = " "
-        else if (lname ~ /(top|btop|htop|monitor|task|process)/)
-            glyph = " "
-        else if (lname ~ /(image|photo|gimp|inkscape|view)/)
-            glyph = " "
+TERMINAL=$(resolve_terminal)
 
-        printf "%s  %-32s  │  %s\n", glyph, name, exec
-    }
-    name=""; exec=""; nodisplay=0; term=0; in_entry=0; in_action=0
-}' /usr/share/applications/*.desktop /usr/local/share/applications/*.desktop "${XDG_DATA_HOME:-$HOME/.local/share}/applications/"*.desktop 2>/dev/null | sort -u | dmenu -p "$PROMPT" -l 10)
+# Discover XDG & Flatpak application directories
+data_dirs() {
+	seen=:
+	add_dir() {
+		case $seen in
+		*:"$1":*) return 0 ;;
+		esac
+		[ -d "$1/applications" ] || return 0
+		printf '%s\n' "$1/applications"
+		seen=$seen$1:
+	}
 
+	[ -n "${XDG_DATA_HOME:-}" ] && add_dir "$XDG_DATA_HOME"
+	[ -n "${HOME:-}" ] && add_dir "$HOME/.local/share"
+
+	if [ -n "${HOME:-}" ]; then
+		add_dir "$HOME/.local/share/flatpak/exports/share"
+		add_dir "$HOME/.local/share/snapd"
+		add_dir "$HOME/.nix-profile/share"
+	fi
+	add_dir /var/lib/flatpak/exports/share
+	add_dir /var/lib/snapd/desktop
+	add_dir /nix/var/nix/profiles/default/share
+
+	OLD_IFS=$IFS
+	IFS=:
+	for dir in ${XDG_DATA_DIRS:-/usr/local/share:/usr/share}; do
+		[ -n "$dir" ] || continue
+		add_dir "$dir"
+	done
+	IFS=$OLD_IFS
+}
+
+# Collect desktop files with symlink support and deduplicate by desktop ID
+collect_desktop_files() {
+	seen_ids=:
+	data_dirs | while IFS= read -r dir; do
+		[ -d "$dir" ] || continue
+		find "$dir" \( -type f -o -type l \) -name '*.desktop' 2>/dev/null | sort
+	done | while IFS= read -r file; do
+		base="${file##*/}"
+		id="${base%.desktop}"
+		case $seen_ids in
+		*:"$id":*) continue ;;
+		esac
+		seen_ids="${seen_ids}${id}:"
+		printf '%s\n' "$file"
+	done
+}
+
+get_app_list() {
+	collect_desktop_files | xargs awk -v term_bin="$TERMINAL" -F= '
+	function emit(n, e, t, fn) {
+		gsub(/@@[a-z]* %?[a-zA-Z]? @@/, "", e)
+		gsub(/%[a-zA-Z]/, "", e)
+		sub(/^[ \t]+|[ \t]+$/, "", e)
+
+		base = fn
+		sub(/.*\//, "", base)
+		sub(/\.desktop$/, "", base)
+
+		if (t)
+			e = term_bin " -e " e
+
+		lname = tolower(n " " e)
+		glyph = " "
+		if (lname ~ /(firefox|brave|chrome|chromium|browser|surf|web)/)
+			glyph = " "
+		else if (lname ~ /(obsidian|notes|memo|journal|logseq|zettlr)/)
+			glyph = "󰠮 "
+		else if (lname ~ /(gearlever|warehouse|flatseal|store|software)/)
+			glyph = " "
+		else if (lname ~ /(telegram|discord|slack|neochat|chat|message)/)
+			glyph = "󰭹 "
+		else if (lname ~ /(music|audio|player|spotify|newpipe|parabolic|tubeconverter|mpv|vlc|media)/)
+			glyph = " "
+		else if (lname ~ /(editor|nvim|vim|code|ide|studio|text)/)
+			glyph = " "
+		else if (lname ~ /(term|kitty|alacritty|ghostty|foot|console)/)
+			glyph = " "
+		else if (lname ~ /(thunar|nautilus|dolphin|ranger|yazi|pcmanfm)/)
+			glyph = " "
+		else if (lname ~ /(setting|config|control|display|network|bluetooth)/)
+			glyph = " "
+		else if (lname ~ /(top|btop|htop|monitor|task|process)/)
+			glyph = " "
+		else if (lname ~ /(image|photo|gimp|inkscape|view|draw)/)
+			glyph = " "
+
+		printf "%s  %-34s  │  %s\n", glyph, n, e
+	}
+	BEGIN {
+		name = ""; exec = ""; nodisplay = 0; term = 0; in_entry = 0; in_action = 0; prev_file = ""
+	}
+	FNR == 1 {
+		if (prev_file != "" && name != "" && exec != "" && !nodisplay) {
+			emit(name, exec, term, prev_file)
+		}
+		name = ""; exec = ""; nodisplay = 0; term = 0; in_entry = 0; in_action = 0
+		prev_file = FILENAME
+	}
+	/^\[Desktop Entry\]/ { in_entry = 1; in_action = 0; next }
+	/^\[Desktop Action/ { in_action = 1 }
+	/^\[/ { if (!/^\[Desktop Action/) { in_entry = 0; in_action = 0 } }
+	in_entry && !in_action && /^Name=/ && !name { name = substr($0, 6) }
+	in_entry && !in_action && /^Exec=/ && !exec { exec = substr($0, 6) }
+	in_entry && !in_action && /^NoDisplay=true/ { nodisplay = 1 }
+	in_entry && !in_action && /^Hidden=true/ { nodisplay = 1 }
+	in_entry && !in_action && /^Terminal=true/ { term = 1 }
+	END {
+		if (prev_file != "" && name != "" && exec != "" && !nodisplay) {
+			emit(name, exec, term, prev_file)
+		}
+	}' | sort -u -k2,2
+}
+
+if [ "$DRY_RUN" -eq 1 ]; then
+	get_app_list
+	exit 0
+fi
+
+selected=$(get_app_list | dmenu -p "$PROMPT" -l 10 "$@")
 [ -n "$selected" ] || exit 0
 
 cmd=$(printf '%s\n' "$selected" | sed 's/.*│[ ]*//')
 [ -n "$cmd" ] || exit 0
 
-nohup /bin/sh -c "$cmd" >/dev/null 2>&1 &
+if command -v setsid >/dev/null 2>&1; then
+	setsid /bin/sh -c "$cmd" >/dev/null 2>&1 &
+else
+	nohup /bin/sh -c "$cmd" >/dev/null 2>&1 &
+fi

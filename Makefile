@@ -36,13 +36,15 @@ dist: clean
 
 install: all
 	mkdir -p $(DESTDIR)$(PREFIX)/bin
-	cp -f dmenu dmenu_path dmenu_run stest $(DESTDIR)$(PREFIX)/bin
-	chmod 755 $(DESTDIR)$(PREFIX)/bin/dmenu
-	chmod 755 $(DESTDIR)$(PREFIX)/bin/dmenu_path
-	chmod 755 $(DESTDIR)$(PREFIX)/bin/dmenu_run
-	chmod 755 $(DESTDIR)$(PREFIX)/bin/stest
-	[ ! -d scripts ] || cp -f scripts/* $(DESTDIR)$(PREFIX)/bin/
-	[ ! -d scripts ] || chmod 755 $(DESTDIR)$(PREFIX)/bin/dmenu-*
+	install -Dm755 dmenu $(DESTDIR)$(PREFIX)/bin/dmenu
+	install -Dm755 dmenu_path $(DESTDIR)$(PREFIX)/bin/dmenu_path
+	install -Dm755 dmenu_run $(DESTDIR)$(PREFIX)/bin/dmenu_run
+	install -Dm755 stest $(DESTDIR)$(PREFIX)/bin/stest
+	if [ -d scripts ]; then \
+		for s in scripts/*; do \
+			[ -f "$$s" ] && install -Dm755 "$$s" $(DESTDIR)$(PREFIX)/bin/$$(basename "$$s"); \
+		done; \
+	fi
 	mkdir -p $(DESTDIR)$(MANPREFIX)/man1
 	sed "s/VERSION/$(VERSION)/g" < dmenu.1 > $(DESTDIR)$(MANPREFIX)/man1/dmenu.1
 	sed "s/VERSION/$(VERSION)/g" < stest.1 > $(DESTDIR)$(MANPREFIX)/man1/stest.1

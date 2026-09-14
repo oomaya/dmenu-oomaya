@@ -9,27 +9,39 @@ command -v wmctrl >/dev/null 2>&1 || {
 
 PROMPT="  Windows >"
 
-selected=$(wmctrl -l | awk '$2 != -1 {
-	id = $1
-	ws = $2 + 1
-	title = ""
-	for (i = 4; i <= NF; i++) title = title (i == 4 ? "" : " ") $i
-	
-	# Determine icon
-	ltitle = tolower(title)
-	icon = " "
-	if (ltitle ~ /(brave|firefox|chrome|chromium)/)
-		icon = " "
-	else if (ltitle ~ /(kitty|alacritty|ghostty|terminal|bash|zsh|agy)/)
-		icon = " "
-	else if (ltitle ~ /(nvim|vim|code|ide)/)
-		icon = " "
-	else if (ltitle ~ /(thunar|file)/)
-		icon = " "
+get_window_list() {
+	wmctrl -l | awk '$2 != -1 {
+		id = $1
+		ws = $2 + 1
+		title = ""
+		for (i = 4; i <= NF; i++) title = title (i == 4 ? "" : " ") $i
 		
-	printf "%s [Tag %s] %-55s  [%s]\n", icon, ws, title, id
-}' | dmenu -p "$PROMPT" -l 10)
+		# Determine icon
+		ltitle = tolower(title)
+		icon = " "
+		if (ltitle ~ /(brave|firefox|chrome|chromium)/)
+			icon = " "
+		else if (ltitle ~ /(obsidian|notes)/)
+			icon = "󰠮 "
+		else if (ltitle ~ /(telegram|discord|slack|neochat)/)
+			icon = "󰭹 "
+		else if (ltitle ~ /(kitty|alacritty|ghostty|terminal|bash|zsh|agy)/)
+			icon = " "
+		else if (ltitle ~ /(nvim|vim|code|ide)/)
+			icon = " "
+		else if (ltitle ~ /(thunar|file)/)
+			icon = " "
+			
+		printf "%s [Tag %s] %-55s  [%s]\n", icon, ws, title, id
+	}'
+}
 
+if [ "${1:-}" = "--dry-run" ]; then
+	get_window_list
+	exit 0
+fi
+
+selected=$(get_window_list | dmenu -p "$PROMPT" -l 10 "$@")
 [ -n "$selected" ] || exit 0
 
 win_id=$(printf '%s\n' "$selected" | sed -n 's/.*\[\(0x[0-9a-fA-F]*\)\]$/\1/p')

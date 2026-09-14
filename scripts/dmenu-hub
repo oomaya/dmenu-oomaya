@@ -4,16 +4,24 @@ set -eu
 
 PROMPT="⚡ Hub >"
 
-choice=$(printf "%s\n" \
-	"  Applications (dmenu-desktop)" \
-	"  Run Command (dmenu-run)" \
-	"  Window Switcher (dmenu-windows)" \
-	"🦄  Omacorn DPI Bypass (dmenu-omacorn)" \
-	"󱉥  Clipboard History (dmenu-clip)" \
-	"  Keybindings Palette (dwm-keybinds)" \
-	"  Screenshot Tool (dmenu-scrot)" \
-	"  Power Menu (dmenu-power)" | dmenu -p "$PROMPT" -l 8)
+get_hub_options() {
+	printf "%s\n" \
+		"  Applications (dmenu-desktop)" \
+		"  Run Command (dmenu-run)" \
+		"  Window Switcher (dmenu-windows)" \
+		"🦄  Omacorn DPI Bypass (dmenu-omacorn)" \
+		"󱉥  Clipboard History (dmenu-clip)" \
+		"  Keybindings Palette (dwm-keybinds)" \
+		"  Screenshot Tool (dmenu-scrot)" \
+		"  Power Menu (dmenu-power)"
+}
 
+if [ "${1:-}" = "--dry-run" ]; then
+	get_hub_options
+	exit 0
+fi
+
+choice=$(get_hub_options | dmenu -p "$PROMPT" -l 8 "$@")
 [ -n "$choice" ] || exit 0
 
 case "$choice" in

@@ -3,6 +3,47 @@
 set -eu
 
 PROMPT="  Run >"
-cmd=$(dmenu_path | dmenu -p "$PROMPT" -l 10 "$@")
+
+get_candidates() {
+	# Tier 1: Canonical dmenu_path
+	if command -v dmenu_path >/dev/null 2>&1; then
+		dmenu_path
+		return
+	elif [ -x "/usr/local/bin/dmenu_path" ]; then
+		/usr/local/bin/dmenu_path
+		return
+	elif [ -x "$HOME/.local/bin/dmenu_path" ]; then
+		"$HOME/.local/bin/dmenu_path"
+		return
+	fi
+
+	# Tier 2: Direct stest in-line scan
+	if command -v stest >/dev/null 2>&1; then
+		IFS=:
+		stest -flx $PATH 2>/dev/null | sort -u
+		return
+	fi
+
+	# Tier 3: Pure POSIX find directory traversal across $PATH
+	OLD_IFS=$IFS
+	IFS=:
+	for dir in $PATH; do
+		[ -d "$dir" ] || continue
+		find -L "$dir" -maxdepth 1 -type f -perm /111 -printf '%f\n' 2>/dev/null
+	done | sort -u
+	IFS=$OLD_IFS
+}
+
+if [ "${1:-}" = "--dry-run" ]; then
+	get_candidates
+	exit 0
+fi
+
+cmd=$(get_candidates | dmenu -p "$PROMPT" -l 10 "$@")
 [ -n "$cmd" ] || exit 0
-nohup ${SHELL:-"/bin/sh"} -c "$cmd" >/dev/null 2>&1 &
+
+if command -v setsid >/dev/null 2>&1; then
+	setsid ${SHELL:-"/bin/sh"} -c "$cmd" >/dev/null 2>&1 &
+else
+	nohup ${SHELL:-"/bin/sh"} -c "$cmd" >/dev/null 2>&1 &
+fi
