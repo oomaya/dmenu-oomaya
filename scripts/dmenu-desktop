@@ -145,7 +145,7 @@ get_app_list() {
 		if (prev_file != "" && name != "" && exec != "" && !nodisplay) {
 			emit(name, exec, term, prev_file)
 		}
-	}' | sort -u -k2,2
+	}' | sort -u -f -k2
 }
 
 if [ "$DRY_RUN" -eq 1 ]; then
