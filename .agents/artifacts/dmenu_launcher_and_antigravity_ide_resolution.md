@@ -125,3 +125,18 @@ Updated `~/dotfiles/antigravity/.local/bin/antigravity-ide`:
    Simulated crash / kill leaving stale PID in `code.lock`. Next invocation automatically purged the stale lock and spawned cleanly.
 4. **Full Test Suite**:
    `~/dotfiles/verify.sh` executed 100% green across all 74 automated checks.
+
+---
+
+## 5. Pareto Pre-Mortem Analysis: Cross-Fleet Failure Modes
+
+Applying the 80/20 Pareto rule ("What 20% of latent failure modes will cause 80% of downstream failures across the fleet?"):
+
+| Failure Mode / Vector | Probability & Blast Radius | Mechanism | Mitigation / Fix Applied |
+| :--- | :--- | :--- | :--- |
+| **1. `agy-update` Clobber Bomb** | **HIGH / CRITICAL** | Running `agy-update` previously invoked `app-install --name antigravity` and `ln -sfn ... ~/.local/bin/antigravity`, overwriting the CLI wrapper and regenerating an unmanaged `antigravity.desktop`. | **Hardened**: Updated `agy-update` (`oomaya/dotfiles@33472b6`) to decouple the IDE install slug (`--name antigravity-ide`) and link to `~/.local/bin/antigravity-ide`, preserving the CLI wrapper. |
+| **2. GNU Stow Collisions during `fleet-sync`** | **MEDIUM / MODERATE** | On other nodes where `app-install` previously created regular files at `~/.local/share/applications/antigravity*.desktop`, `stow -R antigravity` aborts due to unmanaged targets. | **Mitigated**: Verified `install.sh`'s `resolve_stow_conflicts()` automatically pattern-matches `over existing target ... since neither a link` and moves pre-existing physical desktop files to `$COLLISION_DIR`. |
+| **3. Divergent Binary Names across Installs** | **LOW / MODERATE** | If a node runs an archive named `antigravity` or `electron` instead of `antigravity-ide`, `pgrep -x "antigravity-ide"` won't detect the process name. | **Mitigated**: Dual-layer detection—primary via `kill -0 "$LOCK_PID"` from `code.lock` (binary-name agnostic), fallback to `pgrep -x "antigravity-ide"`. |
+| **4. Wayland Window Activation (Niri / Hyprland)** | **LOW / MINOR** | On Wayland, `wmctrl` fails silently, so the launcher cannot warp focus across tags/workspaces if the window is hidden. | **Mitigated**: Single-instance handoff still dispatches focus internally via VS Code's IPC socket (`vscode-*-main.sock`). Added `--recover` flag for coordinate resets. |
+| **5. XDG Icon Theme Cache Stagnation** | **LOW / COSMETIC** | GUI application pickers (Fuzzel, Rofi, Walker) may show generic placeholders if icon caches aren't refreshed. | **Mitigated**: Standard icon deployed to `~/.local/share/icons/hicolor/512x512/apps/antigravity-ide.png` with dynamic name resolution. |
+
