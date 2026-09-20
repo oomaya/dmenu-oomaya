@@ -10,6 +10,8 @@ static int fuzzy = 1;                       /* -F  option; if 0, disables fuzzy 
 /* -fn option overrides fonts[0]; default X11 font or font set */
 static const char *fonts[] = {
 	"JetBrainsMono Nerd Font:size=16",
+	"MesloLGS Nerd Font Mono:size=16",
+	"Noto Color Emoji:size=14",
 	"monospace:size=16"
 };
 static const char *prompt      = NULL;      /* -p  option; prompt to the left of input field */
