@@ -16,26 +16,56 @@ choice=$(printf "%s\n" \
 
 [ -n "$choice" ] || exit 0
 
+capture_cmd() {
+	mode=$1
+	target=$2
+	if command -v maim >/dev/null 2>&1; then
+		case "$mode" in
+			screen) maim "$target" ;;
+			select) maim -s "$target" ;;
+			window)
+				win=$(xdotool getactivewindow 2>/dev/null || true)
+				[ -n "$win" ] && maim -i "$win" "$target" || maim "$target"
+				;;
+		esac
+	elif command -v xfce4-screenshooter >/dev/null 2>&1; then
+		case "$mode" in
+			screen) xfce4-screenshooter -f -s "$target" ;;
+			select) xfce4-screenshooter -r -s "$target" ;;
+			window) xfce4-screenshooter -w -s "$target" ;;
+		esac
+	elif command -v scrot >/dev/null 2>&1; then
+		case "$mode" in
+			screen) scrot "$target" ;;
+			select) scrot -s "$target" ;;
+			window) scrot -u "$target" ;;
+		esac
+	else
+		command -v notify-send >/dev/null 2>&1 && notify-send -a "Screenshot" "Error" "No screenshot utility found. Run: sudo apt install maim slop"
+		return 1
+	fi
+}
+
 case "$choice" in
 	*"Entire Screen"*)
 		sleep 0.2
-		maim "$TARGET"
+		capture_cmd screen "$TARGET"
 		;;
 	*"Select Area"*)
-		maim -s "$TARGET"
+		capture_cmd select "$TARGET"
 		;;
 	*"Active Window"*)
 		sleep 0.2
-		active_win=$(xdotool getactivewindow 2>/dev/null || true)
-		if [ -n "$active_win" ]; then
-			maim -i "$active_win" "$TARGET"
-		else
-			maim "$TARGET"
-		fi
+		capture_cmd window "$TARGET"
 		;;
 esac
 
-# Copy to clipboard
-if [ -f "$TARGET" ] && command -v xclip >/dev/null 2>&1; then
-	xclip -selection clipboard -t image/png -i "$TARGET"
+# Copy to clipboard and notify
+if [ -f "$TARGET" ]; then
+	if command -v xclip >/dev/null 2>&1; then
+		xclip -selection clipboard -t image/png -i "$TARGET" 2>/dev/null || true
+	fi
+	if command -v notify-send >/dev/null 2>&1; then
+		notify-send -a "Screenshot" "Screenshot Saved" "$TARGET" 2>/dev/null || true
+	fi
 fi

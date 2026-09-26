@@ -2,38 +2,110 @@
 # dmenu-windows — Centered Tokyo Night Interactive Window Switcher
 set -eu
 
-command -v wmctrl >/dev/null 2>&1 || {
-	echo "wmctrl is required for dmenu-windows" >&2
-	exit 1
-}
-
 PROMPT="  Windows >"
 
 get_window_list() {
-	wmctrl -l | awk '$2 != -1 {
-		id = $1
-		ws = $2 + 1
-		title = ""
-		for (i = 4; i <= NF; i++) title = title (i == 4 ? "" : " ") $i
-		
-		# Determine icon
-		ltitle = tolower(title)
-		icon = " "
-		if (ltitle ~ /(brave|firefox|chrome|chromium)/)
-			icon = " "
-		else if (ltitle ~ /(obsidian|notes)/)
-			icon = "󰠮 "
-		else if (ltitle ~ /(telegram|discord|slack|neochat)/)
-			icon = "󰭹 "
-		else if (ltitle ~ /(kitty|alacritty|ghostty|terminal|bash|zsh|agy)/)
-			icon = " "
-		else if (ltitle ~ /(nvim|vim|code|ide)/)
-			icon = " "
-		else if (ltitle ~ /(thunar|file)/)
-			icon = " "
+	if command -v wmctrl >/dev/null 2>&1; then
+		wmctrl -l | awk '$2 != -1 {
+			id = $1
+			ws = $2 + 1
+			title = ""
+			for (i = 4; i <= NF; i++) title = title (i == 4 ? "" : " ") $i
 			
-		printf "%s [Tag %s] %-55s  [%s]\n", icon, ws, title, id
-	}'
+			# Determine icon
+			ltitle = tolower(title)
+			if (ltitle ~ /(xfce4-notifyd|notification)/) next
+			icon = " "
+			if (ltitle ~ /(brave|firefox|chrome|chromium)/) icon = " "
+			else if (ltitle ~ /(obsidian|notes)/) icon = "󰠮 "
+			else if (ltitle ~ /(telegram|discord|slack|neochat)/) icon = "󰭹 "
+			else if (ltitle ~ /(kitty|alacritty|ghostty|terminal|bash|zsh|agy)/) icon = " "
+			else if (ltitle ~ /(nvim|vim|code|ide)/) icon = " "
+			else if (ltitle ~ /(thunar|file)/) icon = " "
+				
+			printf "%s [Tag %s] %-55s  [%s]\n", icon, ws, title, id
+		}'
+	elif command -v xprop >/dev/null 2>&1; then
+		for id in $(xprop -root _NET_CLIENT_LIST 2>/dev/null | sed -n 's/.*# //p' | tr -d ','); do
+			wtype=$(xprop -id "$id" _NET_WM_WINDOW_TYPE 2>/dev/null || true)
+			if echo "$wtype" | grep -Eq '_NET_WM_WINDOW_TYPE_(DOCK|DESKTOP|NOTIFICATION|UTILITY|SPLASH)'; then
+				continue
+			fi
+			state=$(xprop -id "$id" _NET_WM_STATE 2>/dev/null || true)
+			if echo "$state" | grep -Eq '_NET_WM_STATE_(SKIP_TASKBAR|SKIP_PAGER)'; then
+				continue
+			fi
+			title=$(xprop -id "$id" _NET_WM_NAME 2>/dev/null | awk -F'"' '{print $2}')
+			[ -n "$title" ] || title=$(xprop -id "$id" WM_NAME 2>/dev/null | awk -F'"' '{print $2}')
+			[ -n "$title" ] || continue
+
+			# Desktop tag
+			desktop=$(xprop -id "$id" _NET_WM_DESKTOP 2>/dev/null | awk '{print $NF}')
+			tag_str=""
+			if [ -n "$desktop" ] && [ "$desktop" != "4294967295" ] && [ "$desktop" != "-1" ]; then
+				tag_num=$((desktop + 1))
+				tag_str="[Tag $tag_num] "
+			fi
+
+			ltitle=$(echo "$title" | tr '[:upper:]' '[:lower:]')
+			icon=" "
+			if echo "$ltitle" | grep -Eq '(brave|firefox|chrome|chromium)'; then icon=" "
+			elif echo "$ltitle" | grep -Eq '(obsidian|notes)'; then icon="󰠮 "
+			elif echo "$ltitle" | grep -Eq '(telegram|discord|slack|neochat)'; then icon="󰭹 "
+			elif echo "$ltitle" | grep -Eq '(kitty|alacritty|ghostty|terminal|bash|zsh|agy)'; then icon=" "
+			elif echo "$ltitle" | grep -Eq '(nvim|vim|code|ide)'; then icon=" "
+			elif echo "$ltitle" | grep -Eq '(thunar|file)'; then icon=" "
+			fi
+
+			printf "%s %s%-55s  [%s]\n" "$icon" "$tag_str" "$title" "$id"
+		done
+	else
+		echo "Neither wmctrl nor xprop is available" >&2
+		exit 1
+	fi
+}
+
+activate_window() {
+	win_id=$1
+	if command -v dmenu-activate >/dev/null 2>&1 && dmenu-activate "$win_id" 2>/dev/null; then
+		return 0
+	elif [ -x "${0%/*}/dmenu-activate" ] && "${0%/*}/dmenu-activate" "$win_id" 2>/dev/null; then
+		return 0
+	elif [ -x "$HOME/.local/bin/dmenu-activate" ] && "$HOME/.local/bin/dmenu-activate" "$win_id" 2>/dev/null; then
+		return 0
+	elif command -v wmctrl >/dev/null 2>&1 && wmctrl -ia "$win_id" 2>/dev/null; then
+		return 0
+	elif command -v xdotool >/dev/null 2>&1 && xdotool windowactivate "$win_id" 2>/dev/null; then
+		return 0
+	elif command -v oomaya-ctl >/dev/null 2>&1 && oomaya-ctl focus "$win_id" 2>/dev/null; then
+		return 0
+	elif command -v python3 >/dev/null 2>&1; then
+		python3 -c "
+import ctypes, sys
+try:
+    xlib = ctypes.cdll.LoadLibrary('libX11.so.6')
+    xlib.XOpenDisplay.restype = ctypes.c_void_p
+    xlib.XInternAtom.restype = ctypes.c_ulong
+    xlib.XDefaultRootWindow.restype = ctypes.c_ulong
+    class XClientMessageEvent(ctypes.Structure):
+        _fields_ = [
+            ('type', ctypes.c_int), ('serial', ctypes.c_ulong), ('send_event', ctypes.c_int),
+            ('display', ctypes.c_void_p), ('window', ctypes.c_ulong), ('message_type', ctypes.c_ulong),
+            ('format', ctypes.c_int), ('data', ctypes.c_long * 5)
+        ]
+    dpy = xlib.XOpenDisplay(None)
+    if dpy:
+        root = xlib.XDefaultRootWindow(dpy)
+        atom = xlib.XInternAtom(dpy, b'_NET_ACTIVE_WINDOW', False)
+        event = XClientMessageEvent(33, 0, 1, dpy, int(sys.argv[1], 0), atom, 32, (ctypes.c_long * 5)(2, 0, 0, 0, 0))
+        mask = (1 << 20) | (1 << 19)
+        xlib.XSendEvent(dpy, root, False, ctypes.c_long(mask), ctypes.byref(event))
+        xlib.XSync(dpy, False)
+        xlib.XCloseDisplay(dpy)
+except Exception:
+    pass
+" "$win_id"
+	fi
 }
 
 if [ "${1:-}" = "--dry-run" ]; then
@@ -47,4 +119,4 @@ selected=$(get_window_list | dmenu -p "$PROMPT" -l 10 "$@")
 win_id=$(printf '%s\n' "$selected" | sed -n 's/.*\[\(0x[0-9a-fA-F]*\)\]$/\1/p')
 [ -n "$win_id" ] || exit 0
 
-wmctrl -ia "$win_id"
+activate_window "$win_id"

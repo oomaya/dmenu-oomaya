@@ -9,6 +9,7 @@ get_hub_options() {
 		"  Applications (dmenu-desktop)" \
 		"  Run Command (dmenu-run)" \
 		"  Window Switcher (dmenu-windows)" \
+		"⚙  Settings Hub (dwm-settings)" \
 		"🦄  Omacorn DPI Bypass (dmenu-omacorn)" \
 		"󱉥  Clipboard History (dmenu-clip)" \
 		"  Keybindings Palette (dwm-keybinds)" \
@@ -21,7 +22,7 @@ if [ "${1:-}" = "--dry-run" ]; then
 	exit 0
 fi
 
-choice=$(get_hub_options | dmenu -p "$PROMPT" -l 8 "$@")
+choice=$(get_hub_options | dmenu -p "$PROMPT" -l 9 "$@")
 [ -n "$choice" ] || exit 0
 
 case "$choice" in
@@ -33,6 +34,9 @@ case "$choice" in
 		;;
 	*"Window Switcher"*)
 		dmenu-windows
+		;;
+	*"Settings Hub"*)
+		dwm-settings
 		;;
 	*"Omacorn"*)
 		dmenu-omacorn

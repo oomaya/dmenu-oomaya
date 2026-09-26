@@ -6,7 +6,7 @@ include config.mk
 SRC = drw.c dmenu.c stest.c util.c
 OBJ = $(SRC:.c=.o)
 
-all: dmenu stest
+all: dmenu stest dmenu-activate
 
 .c.o:
 	$(CC) -c $(CFLAGS) $<
@@ -22,8 +22,14 @@ dmenu: dmenu.o drw.o util.o
 stest: stest.o
 	$(CC) -o $@ stest.o $(LDFLAGS)
 
+dmenu-activate: dmenu-activate.o
+	$(CC) -o $@ dmenu-activate.o -lX11
+
+dmenu-activate.o: dmenu-activate.c
+	$(CC) -c $(CFLAGS) $<
+
 clean:
-	rm -f dmenu stest $(OBJ) dmenu-$(VERSION).tar.gz
+	rm -f dmenu stest dmenu-activate $(OBJ) dmenu-activate.o dmenu-$(VERSION).tar.gz
 
 dist: clean
 	mkdir -p dmenu-$(VERSION)
@@ -37,6 +43,7 @@ dist: clean
 install: all
 	mkdir -p $(DESTDIR)$(PREFIX)/bin
 	install -Dm755 dmenu $(DESTDIR)$(PREFIX)/bin/dmenu
+	install -Dm755 dmenu-activate $(DESTDIR)$(PREFIX)/bin/dmenu-activate
 	install -Dm755 dmenu_path $(DESTDIR)$(PREFIX)/bin/dmenu_path
 	install -Dm755 dmenu_run $(DESTDIR)$(PREFIX)/bin/dmenu_run
 	install -Dm755 stest $(DESTDIR)$(PREFIX)/bin/stest
@@ -53,6 +60,7 @@ install: all
 
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/dmenu\
+		$(DESTDIR)$(PREFIX)/bin/dmenu-activate\
 		$(DESTDIR)$(PREFIX)/bin/dmenu_path\
 		$(DESTDIR)$(PREFIX)/bin/dmenu_run\
 		$(DESTDIR)$(PREFIX)/bin/stest\
